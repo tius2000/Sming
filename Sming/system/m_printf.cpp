@@ -9,7 +9,7 @@ Descr: embedded very simple version of printf with float support
 #include <stdarg.h>
 #include "osapi.h"
 
-#define MPRINTF_BUF_SIZE 256
+#define INITIAL_BUFFSIZE 128
 
 static void defaultPrintChar(uart_t *uart, char c) {
 	return uart_tx_one_char(c);
@@ -22,10 +22,13 @@ uart_t *cbc_printchar_uart = NULL;
 
 static int skip_atoi(const char **s)
 {
-	int i = 0;
-	while (is_digit(**s))
-		i = i * 10 + *((*s)++) - '0';
-	return i;
+	int num = 0;
+	while (1) {
+		char c = pgm_read_byte(*s);
+		if ( !is_digit(c) ) return num;
+		num = num * 10 + (c - '0');
+		++*s;
+	}
 }
 
 void setMPrintfPrinterCbc(void (*callback)(uart_t *, char), uart_t *uart)
@@ -62,27 +65,25 @@ int m_snprintf(char* buf, int length, const char *fmt, ...)
 	return n;
 }
 
-int m_vprintf ( const char * format, va_list arg )
+int m_vprintf(const char *fmt, va_list va)
 {
-	if(!cbc_printchar)
-	{
-		return 0;
-	}
+    size_t size = INITIAL_BUFFSIZE - 1;
 
-	char buf[MPRINTF_BUF_SIZE], *p;
+    //  need to retry if size is not big enough
+    while (1) {
+        char buffer[size + 1];
+        size_t sz = m_vsnprintf(buffer, sizeof(buffer), fmt, va);
+        if (sz > size) {
+            size = sz;
+            continue;
+        }
 
-	int n = 0;
-	m_vsnprintf(buf, sizeof(buf), format, arg);
-
-	p = buf;
-	while (p && n < sizeof(buf) && *p)
-	{
-		cbc_printchar(cbc_printchar_uart, *p);
-		n++;
-		p++;
-	}
-
-	return n;
+        const char *p = buffer;
+        while (char c = *p++) {
+            cbc_printchar(cbc_printchar_uart, c);
+        }
+        return sz;
+    }
 }
 
 /**
@@ -116,10 +117,11 @@ int m_vsnprintf(char *buf, size_t maxLen, const char *fmt, va_list args)
         if (++size < maxLen) *buf++ = c;
     };
 
-    while (*fmt) {
+    while ( char f = pgm_read_byte(fmt) ) {
         //  copy verbatim text
-        if (*fmt != '%')  {
-            add(*fmt++);
+        if (f != '%')  {
+            add(f);
+			fmt++;
             continue;
         }
         fmt++;
@@ -134,7 +136,7 @@ int m_vsnprintf(char *buf, size_t maxLen, const char *fmt, va_list args)
         int8_t  width       = 0;
         char    pad         = ' ';
 
-        while (char f = *fmt) {
+        while (char f = pgm_read_byte(fmt)) {
             if (f == '-')           minus = 1;
             else if (f == '+')      ;           // ignored
             else if (f == ' ')      ;           // ignored
@@ -144,27 +146,27 @@ int m_vsnprintf(char *buf, size_t maxLen, const char *fmt, va_list args)
         }
 
         //  process padding
-        if (*fmt == '0') {
+        if (pgm_read_byte(fmt) == '0') {
             pad = '0';
             fmt++;
         }
 
         //  process width ('*' is not supported yet)
-        if ( is_digit(*fmt) ) {
+        if ( is_digit(pgm_read_byte(fmt)) ) {
             width = skip_atoi(&fmt);
         }
 
         //  process precision
-        if( *fmt == '.' ) {
+        if( pgm_read_byte(fmt) == '.' ) {
             fmt++;
-            if ( is_digit(*fmt) ) precision = skip_atoi(&fmt);
+            if ( is_digit(pgm_read_byte(fmt)) ) precision = skip_atoi(&fmt);
         }
 
-        //  ignore length
-        while (*fmt == 'l' || *fmt == 'h' || *fmt == 'L') fmt++;
+        //  ignore length specifier
+        for ( char f = pgm_read_byte(fmt); f=='l' || f=='h' || f=='L'; fmt++) ;
 
         //  process type
-        switch (char f = *fmt++) {
+        switch (char f = pgm_read_byte(fmt++)) {
             case '%':
                 add('%');
                 continue;
@@ -173,16 +175,17 @@ int m_vsnprintf(char *buf, size_t maxLen, const char *fmt, va_list args)
                 add( (unsigned char) va_arg(args, int) );
                 continue;
 
-            case 's': {
+            case 's':
+            case 'S': {
                 s = va_arg(args, char *);
 
-                if (!s) s = "(null)";
-                size_t len = strlen(s);
+                if (!s) s = PSTR("(null)");
+                size_t len = strlen_P(s);
                 if (len > precision) len = precision;
 
                 int padding = width - len;
                 while (!minus && padding-- > 0) add(' ');
-                while (len--)                   add(*s++);
+                while (len--)                   add(pgm_read_byte(s++));
                 while (minus && padding-- > 0)  add(' ');
                 continue;
             }
