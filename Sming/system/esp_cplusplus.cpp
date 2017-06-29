@@ -32,6 +32,13 @@ void operator delete(void * ptr)
 		free(ptr);
 }
 
+//	required when compiling with -std=c++14 or -std=c++1z
+void operator delete(void* ptr, size_t n)
+{
+	if (ptr != NULL)
+		free(ptr);
+}
+
 void operator delete[](void * ptr)
 {
 	if (ptr != NULL)

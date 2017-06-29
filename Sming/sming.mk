@@ -120,7 +120,8 @@ STRIP           := $(XTENSA_TOOLS)/xtensa-lx106-elf-strip
 
 PRINTF          ?= printf
 SED             ?= sed
-XXD             := xxd
+PERL			?= perl
+XXD             ?= xxd
 
 ifeq ($(MANUAL_RESET),1)
 	RESET_ESP       := $(PAUSE5) "*** PLEASE RESET ESP8266 NOW ***"
@@ -212,8 +213,8 @@ ifeq ($(RBOOT_ENABLED), 1)
 	#   find rboot source files
 	MODULES         += $(THIRD_PARTY_DIR)/rboot/appcode
 
-	DEFINES += RBOOT_INTEGRATION  RBOOT_RTC_ENABLED RBOOT_GPIO_ENABLED
-	DEFINES += RBOOT_TWO_ROMS BOOT_BIG_FLASH RBOOT_SPIFFS_0 RBOOT_SPIFFS_1
+	DEFINES += RBOOT_INTEGRATION RBOOT_RTC_ENABLED RBOOT_GPIO_ENABLED
+	DEFINES += RBOOT_TWO_ROMS BOOT_BIG_FLASH RBOOT_SPIFFS_1
 
 #==============================================================================
 #   non-rboot settings ("standalone applications")
@@ -233,6 +234,8 @@ else
 	FLASH_FILES     += $(IMAGE_MAIN) $(IMAGE_SDK)
 	FLASH_ROM_FLAGS += 0x000000 $(IMAGE_MAIN) $(ROM0_ADDR) $(IMAGE_SDK)
 endif
+
+DEFINES += RBOOT_ENABLED
 
 #==============================================================================
 #   show memory map
@@ -268,7 +271,19 @@ else
 	DISABLE_SPIFFS  := 1
 endif
 
-DEFINES += SPIFF_SIZE DISABLE_SPIFFS
+DEFINES += SPIFF_SIZE DISABLE_SPIFFS RBOOT_SPIFFS_0
+
+#==============================================================================
+#   special init data is required for system_get_vdd33()
+#------------------------------------------------------------------------------
+ESP_INIT_DATA   := $(SDK_ROMS)/esp_init_data_default.bin
+ESP_INIT_ROM 	:= $(ESP_INIT_DATA)
+
+ifeq ($(GET_VDD33),1)
+	ESP_INIT_ROM := $(BUILD_BASE)/esp_init_data_vdd33.bin
+endif
+
+DEFINES += GET_VDD33
 
 #==============================================================================
 #   serial flash settings
@@ -485,7 +500,7 @@ $(DEP_FILES): ;
 .PRECIOUS: $(DEP_FILES)
 include $(foreach bdir, $(BUILD_DIR), $(wildcard $(bdir)/*.d))
 
-CXXFLAGS        = $(CFLAGS) -fno-rtti -fno-exceptions -std=c++11 -felide-constructors
+CXXFLAGS        += $(CFLAGS) -fno-rtti -fno-exceptions -std=c++1z -felide-constructors
 
 #   define compiler rules for all sources directories
 define compile-source
@@ -618,15 +633,6 @@ $(RBOOT_BIN): $(REQUIRED_FOR_LD)
 #------------------------------------------------------------------------------
 .PHONY: flashinit
 
-ESP_INIT_DATA   := $(SDK_ROMS)/esp_init_data_default.bin
-
-#   special init data is required for system_get_vdd33()
-ifeq ($(GET_VDD33),1)
-	ESP_INIT_ROM := $(BUILD_BASE)/esp_init_data_vdd33.bin
-else
-	ESP_INIT_ROM := $(ESP_INIT_DATA)
-endif
-
 INIT_ROM_FLAGS   = $(RF_CAL_ADDR)   $(SDK_ROMS)/blank.bin
 INIT_ROM_FLAGS  += $(ESP_INIT_ADDR) $(ESP_INIT_ROM)
 INIT_ROM_FLAGS  += $(ESP_PARM_ADDR) $(SDK_ROMS)/blank.bin
@@ -637,6 +643,9 @@ flashinit: kill_term dirs $(ESP_INIT_ROM)
 	$(Q) $(RESET_ESP)
 	$(Q) $(ESPTOOL) $(ESPTOOL_FLAGS) write_flash $(ESPTOOL_IMGFLAGS) $(INIT_ROM_FLAGS)
 
+#==============================================================================
+#   patch init data
+#------------------------------------------------------------------------------
 $(BUILD_BASE)/esp_init_data_vdd33.bin: $(ESP_INIT_DATA)
 	$(info patch default init data for system_get_vdd33)
 	$(Q) cp $< $<.tmp
@@ -657,7 +666,7 @@ flash: kill_term dirs $(CUSTOM_TARGETS) $(FLASH_FILES)
 #------------------------------------------------------------------------------
 .PHONY: terminal kill_term
 
-terminal:
+terminal: kill_term
 	$(Q) $(TERMINAL)
 
 kill_term:

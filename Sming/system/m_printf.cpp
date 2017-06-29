@@ -73,6 +73,8 @@ int m_vprintf(const char *fmt, va_list va)
     while (1) {
         char buffer[size + 1];
         size_t sz = m_vsnprintf(buffer, sizeof(buffer), fmt, va);
+		if (!cbc_printchar) return sz;
+		
         if (sz > size) {
             size = sz;
             continue;
