@@ -8,14 +8,13 @@
 #ifndef _NET_WIRING_
 #define _NET_WIRING_
 
-#define SMING_VERSION "3.6.0" // Major Minor Sub
+#define SMING_VERSION "3.6.1" // Major Minor Sub
 
 #include <functional>
 
 #include "../Wiring/WiringFrameworkIncludes.h"
 
 #include "Delegate.h"
-#include "Boards.h"
 #include "Clock.h"
 #include "SystemClock.h"
 #include "Digital.h"
@@ -23,13 +22,11 @@
 #include "FileSystem.h"
 #include "HardwareSerial.h"
 #include "Interrupts.h"
-#include "DriverPWM.h"
 #include "HardwarePWM.h"
 #include "Timer.h"
 #include "Wire.h"
 #include "SPISoft.h"
 #include "SPI.h"
-
 
 #include "Platform/System.h"
 #include "Platform/WifiEvents.h"
